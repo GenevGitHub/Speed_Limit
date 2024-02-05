@@ -1,0 +1,184 @@
+// Online C compiler to run C program online
+#include <stdio.h>
+#include <stdint.h>
+#include <math.h>
+
+#define rpmLimit    400
+#define rpmth       80
+#define IQmax       16000
+#define powerMax    300
+#define K_IQ        1125
+#define K_t         0.589
+
+uint16_t rpm0 = 300;
+uint16_t rpmprev = 300;
+uint16_t IQ0 = 0;
+uint16_t IQprev = 2000;
+uint8_t throttlePercent = 50;
+uint16_t IQ1;
+
+void normalLaw();
+void powerLimiter();
+
+void normalLaw() {
+    int delta_rpm = rpm0 - rpmprev;
+    int delta_IQ = IQ0 - IQprev;
+    uint16_t IQref = IQmax / 100 * throttlePercent; 
+    printf("IQref = %u\n", IQref);
+    
+    /* Speed Limiter */
+    if (rpm0 <= rpmth) {
+        printf("case 0\n");
+        IQ1 = 0;
+    }
+    else {
+        float alpha = (float) (rpmLimit - rpm0) / (rpm0 - rpmth);
+        // printf("alpha = %f\n", alpha);
+        if (delta_IQ == 0) {
+            if (IQ0 == 0){
+                if (rpm0 < rpmLimit) {
+                    printf("case 1\n");
+                    if (IQref * alpha < 0xFFFF) {
+                        IQ1 = IQref * alpha;
+                    }
+                    else {
+                        IQ1 = 0xFFFF;
+                    }
+                }
+                else {
+                    IQ1 = 0;
+                    printf("case 2\n");
+                }
+            }
+            else {
+                printf("case 3\n");
+                if (IQ0 * (1 + alpha) < 0xFFFF) {
+                    IQ1 = IQ0 * (1 + alpha);
+                }
+                else {
+                    IQ1 = 0xFFFF;
+                }
+            }
+        }
+        else {
+            float beta = (float) delta_rpm / delta_IQ;
+            // printf("beta = %f\n", beta);
+            /* case 4.1 & case 4.2 & case 5 */
+            if (delta_rpm == 0)  {
+                if (rpm0 < rpmLimit) {
+                    if (delta_IQ > 0) {
+                        printf("case 4.1\n");
+                        if (IQ0 * (1 + alpha) < 0xFFFF) {
+                            IQ1 = IQ0 * (1 + alpha);
+                        }
+                        else {
+                            IQ1 = 0xFFFF;
+                        }
+                    }
+                    else {
+                        printf("case 4.2\n");
+                        float gamma = (float) (rpmLimit - rpm0)/(rpmLimit - rpmth);
+                        if (IQref * gamma < 0xFFFF) {
+                            IQ1 = IQref * gamma;
+                        }
+                        else {
+                            IQ1 = 0xFFFF;
+                        }
+                    }
+                }
+                else {
+                    printf("case 5\n");
+                    if (IQ0 * 0.5 < 0xFFFF) {
+                        IQ1 = IQ0 * 0.5;
+                    }
+                    else {
+                        IQ1 = 0xFFFF;
+                    }
+                }
+            }
+            else {
+                /* case 6.1 & case 6.2 */
+                if ((beta < 0) && (IQ0 == 0)) {
+                    if (rpm0 < rpmLimit) {
+                        printf("case 6.1\n");
+                        if (IQref * alpha < 0xFFFF) {
+                            IQ1 = IQref * alpha;
+                        }
+                        else {
+                            IQ1 = 0xFFFF;
+                        }
+                    }
+                    else {
+                        printf("case 6.2\n");
+                        IQ1 = 0;
+                    }
+                }
+                /* case 7.1 & case 7.2 */
+                else if ((beta < 0) && (IQ0 != 0)) {
+                    float lamda = (float)(rpmLimit - rpmth)/(rpm0 - rpmth);
+                    if (rpm0 < rpmLimit) {
+                        printf("case 7.1\n");
+                        if (IQ0 * lamda < 0xFFFF) {
+                            IQ1 = IQ0 * lamda;
+                        }
+                        else {
+                            IQ1 = 0xFFFF;
+                        }
+                    }
+                    else {
+                        printf("case 7.2\n");
+                        if (IQ0 * lamda * lamda < 0xFFFF) {
+                            IQ1 = IQ0 * lamda * lamda;
+                        }
+                        else {
+                            IQ1 = 0xFFFF;
+                        }
+                    }
+                    printf("lamda = %f\n", lamda);
+                }
+                /* case 8.1 & case 8.2 */
+                else {
+                    if (beta * IQ0 > (rpm0 - rpmLimit)) {
+                        printf("case 8\n");
+                        if (IQ0 - (float) ((rpm0 - rpmLimit) / beta) < 0xFFFF) {
+                            IQ1 = IQ0 - (float) ((rpm0 - rpmLimit) / beta);
+                        }
+                        else {
+                            IQ1 = 0xFFFF;
+                        }
+                    }
+                    else {
+                        IQ1 = 0;
+                    }
+                }
+            }
+        }
+    }
+    printf("IQ1_temp = %u\n", IQ1);
+    
+    if (IQref < IQ1) {
+        IQ1 = IQref;
+    }
+    printf("IQ1 = %u\n", IQ1);
+    
+}
+
+void powerLimiter() {
+    /* Power Limiter */
+    uint16_t IQp = (K_IQ / K_t) * powerMax / (rpm0 * 2 * M_PI / 60);
+    printf("IQp = %u\n", IQp);
+    if (IQp < IQ1) {
+        IQ1 = IQp;
+    }
+    float current = (float) IQ1 / K_IQ;
+    printf("IQ1_final = %u\n", IQ1);
+    printf("current = %f\n", current); 
+    
+}
+
+void main() {
+    
+    normalLaw();
+    powerLimiter();
+
+}
